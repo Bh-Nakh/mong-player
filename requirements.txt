@@ -1,0 +1,22 @@
+# 설치:  pip install -r requirements.txt  다음에  pip install --no-deps faster-whisper==1.2.1
+# (faster-whisper 의 의존성 중 PyAV(av)는 GPL FFmpeg 를 포함해 상용 배포에 쓸 수 없어 일부러 뺀다)
+
+# UI (LGPL-3.0)
+PySide6>=6.8
+# libmpv 바인딩 (LGPL-2.1+ 선택)
+python-mpv>=1.0.8
+
+# AI 자막 (모두 MIT/Apache/BSD) — 설치본에는 넣지 않고 'stt' 추가 기능으로 처음 쓸 때 받는다
+# (tools/build_addons.py 가 이 환경에서 골라 묶는다)
+ctranslate2>=4.5
+onnxruntime>=1.20
+tokenizers>=0.20
+huggingface_hub>=0.25
+tqdm
+numpy>=1.24
+
+# GPU 가속(cuBLAS)은 설치본에 넣지 않는다 — NVIDIA GPU 가 있는 PC 에서 AI 자막 첫 사용 때
+# %LOCALAPPDATA%\NoAdPlayer\cuda 로 받는다 (noadplayer/stt/gpu.py)
+
+# 개발 도구 전용 (배포본에 넣지 않음): 아이콘 생성, 시험 캡처
+Pillow

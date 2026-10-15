@@ -1,0 +1,53 @@
+name: build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: 저장소 가져오기
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 7-Zip · Inno Setup 6 설치
+        run: choco install 7zip innosetup -y --no-progress
+
+      - name: Python 가상환경 만들기와 패키지 설치
+        shell: cmd
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python.exe -m pip install --upgrade pip
+          .venv\Scripts\python.exe -m pip install -r requirements.txt pyinstaller
+
+      - name: 네이티브 엔진 받기 (fetch_deps)
+        shell: cmd
+        run: .venv\Scripts\python.exe tools\fetch_deps.py
+
+      - name: 빌드 (build.bat → setup.bat)
+        shell: cmd
+        run: |
+          call build.bat
+          call setup.bat
+
+      - name: 설치 파일 해시 출력
+        shell: pwsh
+        run: |
+          $f = Get-ChildItem setup\*.exe | Sort-Object LastWriteTime | Select-Object -Last 1
+          Write-Host "설치 파일: $($f.Name)"
+          Get-FileHash $f.FullName -Algorithm SHA256 | Format-List
+
+      - name: 설치 파일 보관
+        uses: actions/upload-artifact@v4
+        with:
+          name: mong-player-setup
+          path: setup/*.exe
+          if-no-files-found: error

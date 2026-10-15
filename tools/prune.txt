@@ -1,0 +1,32 @@
+# 설치본에서 지우는 PySide6 파일 (tools/build.py 가 빌드 끝에 적용). dist\몽플레이어\_internal\PySide6 기준 상대 경로, * 사용 가능.
+# 지운 뒤 `몽플레이어.exe --selftest` 와 창 시험이 통과해야 한다. 앱이 쓰지 않는 것만 적는다.
+
+# 소프트웨어 OpenGL — mpv 화면은 진짜 GPU 드라이버가 필요해서 대신 쓸 수 없다
+opengl32sw.dll
+
+# Qt Quick / QML / PDF / 가상 키보드 — 이 앱은 위젯만 쓴다
+Qt6Quick*.dll
+Qt6Qml*.dll
+Qt6Pdf*.dll
+Qt6VirtualKeyboard.dll
+plugins/platforminputcontexts/qtvirtualkeyboardplugin.dll
+
+# Qt 자체 번역 파일 (QTranslator 를 쓰지 않는다)
+translations
+
+# 쓰지 않는 이미지 형식·SVG (앱 아이콘은 ico/png)
+Qt6Svg.dll
+plugins/iconengines
+plugins/imageformats/qsvg.dll
+plugins/imageformats/qicns.dll
+plugins/imageformats/qpdf.dll
+plugins/imageformats/qtga.dll
+plugins/imageformats/qtiff.dll
+plugins/imageformats/qwbmp.dll
+plugins/imageformats/qwebp.dll
+
+# 쓰지 않는 입력·화면 플러그인
+plugins/generic
+plugins/platforms/qdirect2d.dll
+plugins/platforms/qminimal.dll
+plugins/platforms/qoffscreen.dll
