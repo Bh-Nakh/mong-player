@@ -21,6 +21,9 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"          # 빌드 서버 콘솔(cp1252)에서 한글 출력 오류 방지
+      PYTHONIOENCODING: utf-8
     steps:
       - name: 저장소 가져오기
         uses: actions/checkout@v4
