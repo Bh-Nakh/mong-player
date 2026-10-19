@@ -81,6 +81,7 @@ class MainWindow(QMainWindow):
         self.filters = filters.Filters()
         self.ab = [None, None]
         self.workers = set()
+        self._stt_dlg = self._tr_dlg = None          # 떠 있는 AI 자막·번역 작업 창 (모달 아님)
         self._path = None
         self._was_maximized = False
         self._fs_dock_visible = False
@@ -848,12 +849,36 @@ class MainWindow(QMainWindow):
         if not self._path or not os.path.isfile(self._path):
             QMessageBox.information(self, "AI 자막", "내 PC 에 있는 동영상·음악 파일을 연 상태에서 쓸 수 있습니다.")
             return
+        if self._raise_job(self._stt_dlg):
+            return
         media = self._path
         dlg = dialogs.SttDialog(media, self.settings["stt_language"], self.settings["stt_auto_translate"], self)
-        if not dlg.exec() or not dlg.result:
-            return
+        self._stt_dlg = dlg
+        dlg.finished.connect(lambda _code: self._stt_finished(dlg, media))
+        dlg.show()                                   # 모달 아님 — 만드는 동안에도 재생·다른 영상 열기 가능
+
+    def _raise_job(self, dlg):
+        """같은 작업 창이 이미 떠 있으면 앞으로 꺼낸다."""
+        if dlg is None:
+            return False
+        dlg.showNormal()
+        dlg.raise_()
+        dlg.activateWindow()
+        return True
+
+    @staticmethod
+    def _drop_job(dlg):
+        if dlg.worker:
+            dlg.worker.wait()                        # done/failed 를 보낸 뒤 스레드가 완전히 끝날 때까지
+        dlg.deleteLater()
+
+    def _stt_finished(self, dlg, media):
+        self._stt_dlg = None
+        self._drop_job(dlg)
         self.settings["stt_language"] = dlg.language
         self.settings["stt_auto_translate"] = dlg.translate_check.isChecked()
+        if not dlg.result:
+            return
         out = self.sub_out_path(media, ".AI.srt")
         with open(out, "w", encoding="utf-8-sig") as f:
             f.write(dlg.result["srt"])
@@ -902,9 +927,18 @@ class MainWindow(QMainWindow):
         if src["kind"] == "external" and os.path.normcase(src["path"] or "") == os.path.normcase(out):
             QMessageBox.information(self, "자막 번역", "이미 번역된 한국어 자막입니다.")
             return
+        if self._raise_job(self._tr_dlg):
+            return
         dlg = dialogs.TranslateDialog(src, out, self.settings, self)
-        if dlg.exec() and dlg.count:
-            if self._path == media:
+        self._tr_dlg = dlg
+        dlg.finished.connect(lambda _code: self._translate_finished(dlg, media, out))
+        dlg.show()                                   # 모달 아님 — 번역 중에도 재생·다른 영상 열기 가능
+
+    def _translate_finished(self, dlg, media, out):
+        self._tr_dlg = None
+        self._drop_job(dlg)
+        if dlg.count:
+            if self._path == media:                  # 그사이 다른 영상으로 바꿨으면 붙이지 않는다 (파일은 영상 옆에 저장됨)
                 self.add_subtitle(out, "한국어 번역")
             self.osd(f"번역 완료 {dlg.count}줄 ({os.path.basename(out)})", 3000)
 
@@ -1038,10 +1072,19 @@ class MainWindow(QMainWindow):
         self._sync_icon("play", self.play_btn, "play" if paused else "pause")
 
     def closeEvent(self, e):
+        busy = [d.windowTitle() for d in (self._stt_dlg, self._tr_dlg) if d and d.worker and d.worker.isRunning()]
+        if busy and QMessageBox.question(self, APP_NAME_KO, f"{', '.join(busy)} 작업이 진행 중입니다.\n"
+                                         "종료하면 작업이 취소됩니다. 종료할까요?") != QMessageBox.Yes:
+            e.ignore()
+            return
         self.tick.stop()
         self._save_resume()
         for w in list(self.workers):
             w.wait(15000)                        # 구간 저장 중이면 끝날 때까지
+        for dlg in (self._stt_dlg, self._tr_dlg):  # AI 자막·번역 중이면 취소하고 멈출 때까지
+            if dlg and dlg.worker and dlg.worker.isRunning():
+                dlg.worker.cancel()
+                dlg.worker.wait(15000)
         if self.isFullScreen():
             self.toggle_fullscreen()
         self.settings["geometry"] = bytes(self.saveGeometry().toBase64()).decode()

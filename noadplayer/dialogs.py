@@ -315,7 +315,7 @@ class SttDialog(QDialog):
     def _failed(self, msg):
         if msg:
             QMessageBox.warning(self, "AI 자막", f"자막을 만들지 못했습니다.\n\n{msg}")
-        self.reject()
+        QDialog.reject(self)
 
     def cancel(self):
         if self.worker and self.worker.isRunning():
@@ -324,6 +324,13 @@ class SttDialog(QDialog):
             self.worker.cancel()
         else:
             self.reject()
+
+    def reject(self):
+        """Esc 로 닫아도 작업 중이면 취소부터 한다 (창은 작업이 멈춘 뒤 닫힌다)."""
+        if self.worker and self.worker.isRunning():
+            self.cancel()
+        else:
+            super().reject()
 
     def closeEvent(self, e):
         if self.worker and self.worker.isRunning():
@@ -512,7 +519,7 @@ class TranslateDialog(QDialog):
             QMessageBox.information(self, "자막 번역", "이미 한국어 자막입니다.")
         elif msg:
             QMessageBox.warning(self, "자막 번역", f"번역하지 못했습니다.\n\n{msg}")
-        self.reject()
+        QDialog.reject(self)
 
     def cancel(self):
         if self.worker and self.worker.isRunning():
@@ -521,6 +528,13 @@ class TranslateDialog(QDialog):
             self.worker.cancel()
         else:
             self.reject()
+
+    def reject(self):
+        """Esc 로 닫아도 작업 중이면 취소부터 한다 (창은 작업이 멈춘 뒤 닫힌다)."""
+        if self.worker and self.worker.isRunning():
+            self.cancel()
+        else:
+            super().reject()
 
     def closeEvent(self, e):
         if self.worker and self.worker.isRunning():
