@@ -5,12 +5,12 @@ import tempfile
 import time
 
 import mpv
-from PySide6.QtCore import QByteArray, QSize, Qt, QTimer
+from PySide6.QtCore import QByteArray, QEvent, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import (QCheckBox, QDockWidget, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMainWindow, QMenu,
                                QMessageBox, QSizePolicy, QStyle, QToolButton, QVBoxLayout, QWidget)
 
-from . import APP_NAME_KO, VERSION, addons, capture, dialogs, filters, mong_update
+from . import APP_NAME_KO, VERSION, addons, capture, dialogs, filters, mong_update, titlebar
 from .paths import DATA, ICON, user_dir
 from .playlist import PlaylistPanel
 from .translate import source as translate_source
@@ -82,6 +82,8 @@ class MainWindow(QMainWindow):
         self.ab = [None, None]
         self.workers = set()
         self._stt_dlg = self._tr_dlg = None          # 떠 있는 AI 자막·번역 작업 창 (모달 아님)
+        self._seek_target, self._seek_at = 0.0, 0.0  # 방향키 연속 이동용 마지막 목표 시각
+        self._frame_ready = False
         self._path = None
         self._was_maximized = False
         self._fs_dock_visible = False
@@ -100,6 +102,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle(APP_NAME_KO)
         self.setWindowIcon(QIcon(ICON))
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)   # 제목 표시줄은 직접 그린다 (titlebar.py)
         self.resize(1100, 680)
         self.player = mpv.MPV(
             vo="libmpv", hwdec="auto-safe", keep_open="yes", idle="yes", osc=False, ytdl=False,
@@ -266,7 +269,7 @@ class MainWindow(QMainWindow):
         return a
 
     def _build_menus(self):
-        mb = self.menuBar()
+        mb = self.main_menu = QMenu(self)          # 팟플레이어처럼 메뉴 막대 대신 제목 표시줄 왼쪽 [몽플레이어 ▾] 에서 연다
         m = mb.addMenu("파일(&F)")
         self._action(m, "파일 열기…", self.open_file_dialog, "Ctrl+O")
         self._action(m, "주소 열기 (URL·FTP)…", self.open_url_dialog, "Ctrl+U")
@@ -369,10 +372,41 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         self._action(m, "몽플레이어 정보", lambda: dialogs.show_about(self))
 
-        self.context = QMenu(self)
-        for menu in mb.findChildren(QMenu):
-            if menu.parent() is mb:
-                self.context.addMenu(menu)
+        self.context = mb                          # 영상 오른쪽 클릭도 같은 주 메뉴
+        self.titlebar = titlebar.TitleBar(self, mb, APP_NAME_KO, self.settings["always_on_top"])
+        self.titlebar.pin_toggled.connect(self._set_always_on_top)
+        self.setMenuWidget(self.titlebar)
+        self.setStyleSheet(self.styleSheet() + titlebar.STYLE)
+
+    def _set_always_on_top(self, on):
+        self.settings["always_on_top"] = bool(on)
+        titlebar.set_topmost(self, on)
+
+    # ── 직접 그린 제목 표시줄: 창 테두리 처리
+    def showEvent(self, e):
+        super().showEvent(e)
+        if not self._frame_ready:
+            self._frame_ready = True
+            titlebar.enable_native_frame(self)
+            if self.settings["always_on_top"]:
+                titlebar.set_topmost(self, True)
+        self.titlebar.sync_state()
+
+    def nativeEvent(self, event_type, message):
+        if self._frame_ready and event_type == b"windows_generic_MSG":
+            r = titlebar.native_event(self, self.titlebar, message)
+            if r:
+                return r
+        return super().nativeEvent(event_type, message)
+
+    def changeEvent(self, e):
+        if not hasattr(self, "titlebar"):                 # 만드는 도중에 오는 이벤트
+            pass
+        elif e.type() == QEvent.WindowStateChange:
+            self.titlebar.sync_state()
+        elif e.type() == QEvent.ActivationChange:
+            self.titlebar.set_active(self.isActiveWindow())
+        super().changeEvent(e)
 
     # ───────────────────────── 열기 ─────────────────────────
     def open_path(self, path):
@@ -631,10 +665,20 @@ class MainWindow(QMainWindow):
             self._cmd("no-osd", "seek", f"{sec:.3f}", "absolute+exact" if exact else "absolute+keyframes")
 
     def seek_rel(self, sec):
-        if self._path:
-            self._cmd("no-osd", "seek", str(sec), "relative")
-            self.seek.hold_until = time.monotonic() + SeekSlider.HOLD_S
-            self.flash("forward" if sec > 0 else "back", self.fmt_step(abs(int(sec))))
+        """방향키 이동 — 정확히 sec 초씩. (relative 탐색은 키프레임에 붙어 7·5·3·6초처럼 들쭉날쭉했다)
+        연달아 누르면 아직 끝나지 않은 앞 탐색의 목표 시각에서 이어 계산한다. 왼쪽 위에 이동한 시각만 보인다."""
+        if not self._path:
+            return
+        now = time.monotonic()
+        p = self.player
+        pending = now - self._seek_at < 0.3 or p.seeking
+        t = max(0.0, (self._seek_target if pending else (p.time_pos or 0.0)) + sec)
+        if p.duration:
+            t = min(t, p.duration)
+        self._seek_target, self._seek_at = t, now
+        self._cmd("no-osd", "seek", f"{t:.3f}", "absolute+exact")
+        self.seek.hold_until = now + SeekSlider.HOLD_S
+        self.osd(fmt_time(t), 1200)
 
     def change_speed(self, d):
         sp = 1.0 if d is None else min(4.0, max(0.25, round((self.player.speed or 1.0) + d, 2)))
@@ -694,7 +738,7 @@ class MainWindow(QMainWindow):
         if self.isFullScreen():
             self.central_layout.addWidget(self.controls)
             self.controls.show()
-            self.menuBar().show()
+            self.titlebar.show()
             self.video.unsetCursor()
             self.hide_timer.stop()
             self._dock_lock = True
@@ -704,7 +748,7 @@ class MainWindow(QMainWindow):
         else:
             self._was_maximized = self.isMaximized()
             self._fs_dock_visible = self.dock.isVisible()
-            self.menuBar().hide()
+            self.titlebar.hide()
             self.controls.setParent(self.video)       # 영상 위에 겹쳐 띄우는 컨트롤
             self.controls.hide()
             self.showFullScreen()

@@ -36,6 +36,7 @@ DEFAULTS = {
     "seek_steps": {"normal": 3, "ctrl": 1, "shift": 60, "ctrl_alt": 300},   # 방향키 이동 시간(초)
     "hq_scale": True,               # 고화질 확대/축소 (선명하게)
     "auto_update": True,            # 시작할 때 새 버전 확인
+    "always_on_top": False,         # 제목 표시줄 [항상 위] 핀
     "filters": {},                  # 화질 필터 값 (비면 기본)
 }
 RECENT_MAX = 10
