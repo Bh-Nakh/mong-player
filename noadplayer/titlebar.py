@@ -57,6 +57,11 @@ def enable_native_frame(win):
     user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_FLAGS)
 
 
+def refresh_frame(win):
+    """창 크기는 그대로 두고 WM_NCCALCSIZE 를 다시 받아 안쪽 영역을 새로 계산하게 한다."""
+    user32.SetWindowPos(int(win.winId()), None, 0, 0, 0, 0, SWP_FLAGS)
+
+
 def set_topmost(win, on):
     """항상 위 — Qt 창 플래그를 바꾸면 창을 새로 만들어 영상 출력이 끊기므로 Win32 로 직접."""
     user32.SetWindowPos(int(win.winId()), HWND_TOPMOST if on else HWND_NOTOPMOST, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)
@@ -66,7 +71,9 @@ def native_event(win, titlebar, message):
     """MainWindow.nativeEvent 에서 부른다. 처리했으면 (True, 결과), 아니면 None."""
     msg = wintypes.MSG.from_address(int(message))
     if msg.message == WM_NCCALCSIZE and msg.wParam:
-        if user32.IsZoomed(msg.hWnd) and not win.isFullScreen():
+        # 전체화면은 Qt 가 최대화 스타일을 떼므로 IsZoomed 만 본다. isFullScreen() 은 전체화면을 빠져나오는 도중에
+        # 아직 참이라, 그 순간 계산된 안쪽 영역이 테두리만큼 줄지 않은 채 남아 내용이 밀리고 클릭이 어긋났다.
+        if user32.IsZoomed(msg.hWnd):
             fx, fy = _frame(msg.hWnd)
             r = NCCALCSIZE_PARAMS.from_address(msg.lParam).rgrc[0]
             r.left += fx

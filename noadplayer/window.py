@@ -5,7 +5,7 @@ import tempfile
 import time
 
 import mpv
-from PySide6.QtCore import QByteArray, QEvent, QSize, Qt, QTimer
+from PySide6.QtCore import QByteArray, QEvent, QRect, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import (QCheckBox, QDockWidget, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMainWindow, QMenu,
                                QMessageBox, QSizePolicy, QStyle, QToolButton, QVBoxLayout, QWidget)
@@ -86,6 +86,7 @@ class MainWindow(QMainWindow):
         self._frame_ready = False
         self._path = None
         self._was_maximized = False
+        self._fs_bar_h = 0                     # 전체화면 조작부 높이 (전체화면마다 한 번 잰다)
         self._fs_dock_visible = False
         self._eof_handled = False
         self._last_sec = -1
@@ -152,6 +153,7 @@ class MainWindow(QMainWindow):
         self.video.double_clicked.connect(self.toggle_pause)   # 더블클릭 = 재생/일시정지
         self.video.wheel.connect(lambda d: self.change_volume(5 * d))
         self.video.mouse_moved.connect(self._video_mouse_moved)
+        self.video.resized.connect(self._video_resized)
         self.video.context_menu.connect(lambda pos: self.context.exec(pos))
         self.video.files_dropped.connect(self.open_dropped)
         self.video.drag_started.connect(self._move_window)
@@ -161,6 +163,7 @@ class MainWindow(QMainWindow):
         self.controls = ControlBar()
         self.controls.setObjectName("controls")
         self.controls.setAttribute(Qt.WA_StyledBackground)
+        self.controls.wheel.connect(lambda d: self.change_volume(5 * d))
         self.seek = SeekSlider(self.seek_to)
         self.play_btn = self._tool("play", "재생/일시정지 (Space)", self.toggle_pause)
         self.play_btn.setObjectName("playBtn")
@@ -745,23 +748,41 @@ class MainWindow(QMainWindow):
             self.showMaximized() if self._was_maximized else self.showNormal()
             self.dock.setVisible(self._fs_dock_visible)
             self._dock_lock = False
+            titlebar.refresh_frame(self)              # 빠져나오는 도중의 테두리 계산이 남지 않게 한 번 더
         else:
             self._was_maximized = self.isMaximized()
             self._fs_dock_visible = self.dock.isVisible()
             self.titlebar.hide()
             self.controls.setParent(self.video)       # 영상 위에 겹쳐 띄우는 컨트롤
             self.controls.hide()
+            self._fs_bar_h = 0                        # 높이는 처음 띄울 때 한 번만 잰다
             self.showFullScreen()
             self.dock.hide()                          # 전체화면이 된 뒤 숨겨야 '보이기' 설정이 안 바뀐다
         self.video.setFocus()
+
+    def _place_fs_controls(self, why):
+        """전체화면 조작부를 영상 맨 아래에 붙인다. 높이는 전체 폭으로 넓힌 뒤 한 번만 재서 고정한다
+        (마우스가 움직일 때마다 다시 재면 넓은 화면용 버튼이 나타나며 높이·위치가 오락가락할 수 있다)."""
+        w, vh = self.video.width(), self.video.height()
+        if not self._fs_bar_h:
+            self.controls.resize(w, self.controls.height())
+            self._fs_bar_h = self.controls.sizeHint().height()
+        geo = QRect(0, vh - self._fs_bar_h, w, self._fs_bar_h)
+        if self.controls.geometry() != geo:
+            self.controls.setGeometry(geo)
+            if os.environ.get("NOADPLAYER_FS_LOG"):
+                print(f"[fs] {why}: video={w}x{vh} bar={geo.getRect()}", file=sys.stderr)
+
+    def _video_resized(self):
+        if self.isFullScreen() and self.controls.parent() is self.video:
+            self._place_fs_controls("resize")
 
     def _video_mouse_moved(self, pos):
         if not self.isFullScreen():
             return
         self.video.unsetCursor()
-        if pos.y() > self.video.height() - 110:
-            h = self.controls.sizeHint().height()
-            self.controls.setGeometry(0, self.video.height() - h, self.video.width(), h)
+        if self.controls.isHidden() and pos.y() > self.video.height() - 110:
+            self._place_fs_controls("show")           # 떠 있는 동안은 다시 배치하지 않는다
             self.controls.show()
             self.controls.raise_()
         self.hide_timer.start()

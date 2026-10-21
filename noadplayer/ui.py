@@ -1,7 +1,7 @@
 """화면 부품: 클릭하면 그 위치로 가는 슬라이더, 직접 그린 밝은 아이콘, 영상 위 동작 표시."""
 import time
 
-from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QTimer, QVariantAnimation
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import QSlider, QStyle, QToolTip, QWidget
 
@@ -135,6 +135,9 @@ class JumpSlider(QSlider):
         else:
             super().mouseReleaseEvent(e)
 
+    def wheelEvent(self, e):
+        e.ignore()                             # 휠은 조작부(소리 조절)로 넘긴다
+
 
 def fmt_time(sec):
     sec = int(max(0, sec or 0))
@@ -224,6 +227,7 @@ class ControlBar(QWidget):
     """아래 조작부. 좁아지면 꼭 필요한 부분(재생·정지·이전·다음·시간·목록 / 재생 막대·소리)만 남기고,
     넓을 때만 보이는 부분(전체화면 버튼 등)은 숨긴다. 최소 폭은 꼭 필요한 부분에서 정해진다."""
     OPTIONAL_MIN_W = 400
+    wheel = Signal(int)                        # +1 위 / -1 아래 — 조작부 어디서 돌려도 소리 조절
 
     def __init__(self, margins=(8, 4, 8, 4), spacing=2):
         super().__init__()
@@ -241,6 +245,12 @@ class ControlBar(QWidget):
         lay = self.layout()
         w = max(self._row_width(self.row1, 60), self._row_width(self.row2)) + self.margins[0] + self.margins[2]
         return QSize(w, lay.sizeHint().height() if lay else 0)
+
+    def wheelEvent(self, e):
+        d = e.angleDelta().y()
+        if d:
+            self.wheel.emit(1 if d > 0 else -1)
+        e.accept()
 
     def resizeEvent(self, e):
         super().resizeEvent(e)

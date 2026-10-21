@@ -42,6 +42,7 @@ class VideoWidget(QOpenGLWidget):
     double_clicked = Signal()
     wheel = Signal(int)                # +1 위 / -1 아래
     mouse_moved = Signal(QPoint)
+    resized = Signal()
     context_menu = Signal(QPoint)      # 화면 좌표
     files_dropped = Signal(list)
     drag_started = Signal()            # 누른 채로 끌기 시작 → 창 이동
@@ -81,6 +82,10 @@ class VideoWidget(QOpenGLWidget):
             self.drag_started.emit()
         self.mouse_moved.emit(pos)
         super().mouseMoveEvent(e)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self.resized.emit()
 
     def wheelEvent(self, e):
         d = e.angleDelta().y()
